@@ -119,8 +119,8 @@ extern void display_begin() {
   gfx.endWrite();
 
   // Attiva retroilluminazione
-  ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
-  ledcAttachPin(PIN_BL, 1);     // assegna il pin BL al canale 1
+  //ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
+  ledcAttach(PIN_BL, 12000, 8);     // assegna il pin BL al canale 1
   ledcWrite(1, TFT_BRIGHTNESS); // luminosità 0 - 255
 }
 

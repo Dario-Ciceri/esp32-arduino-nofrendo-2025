@@ -31,6 +31,7 @@
 #include "noftypes.h"
 #include "memguard.h"
 #include "log.h"
+#include "osd.h"
 
 /* Maximum number of allocated blocks at any one time */
 #define MAX_BLOCKS 4096

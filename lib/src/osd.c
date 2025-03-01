@@ -56,9 +56,7 @@ static void displayTask(void *arg)
 	{
 		// xQueueReceive(vidQueue, &bmp, portMAX_DELAY); //skip one frame to drop to 30
 		xQueueReceive(vidQueue, &bmp, portMAX_DELAY);
-		// my_log("OK xQueueReceive");
 		display_write_frame((const uint8_t **)bmp->line);
-		// my_log("OK display_write_frame");
 	}
 }
 
@@ -213,9 +211,7 @@ int osd_init()
 	
 	// xTaskCreatePinnedToCore(&displayTask, "displayTask", 2048, NULL, 5, NULL, 1);
 	xTaskCreatePinnedToCore(&displayTask, "displayTask", 2048, NULL, 0, NULL, 0);
-	my_log("OK xTaskCreatePinnedToCore");
-	//osd_initinput();
-	my_log("OK osd_initinput");
+	osd_initinput();
 	return 0;
 }
 

@@ -3,14 +3,14 @@
 **
 **
 ** This program is free software; you can redistribute it and/or
-** modify it under the terms of version 2 of the GNU Library General 
+** modify it under the terms of version 2 of the GNU Library General
 ** Public License as published by the Free Software Foundation.
 **
-** This program is distributed in the hope that it will be useful, 
+** This program is distributed in the hope that it will be useful,
 ** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU 
-** Library General Public License for more details.  To obtain a 
-** copy of the GNU Library General Public License, write to the Free 
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+** Library General Public License for more details.  To obtain a
+** copy of the GNU Library General Public License, write to the Free
 ** Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **
 ** Any permitted reproduction of these routines, in whole or in part,
@@ -24,7 +24,6 @@
 ** $Id: nofrendo.c,v 1.3 2001/04/27 14:37:11 neil Exp $
 */
 
-#include "SerialWrapper.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -225,28 +224,20 @@ int main_loop(const char *filename, system_t type)
    vidinfo_t video;
 
    /* register shutdown, in case of assertions, etc. */
-     atexit(shutdown_everything);
+   atexit(shutdown_everything);
 
    if (config.open())
       return -1;
 
-      my_log("OK config");
-
    if (osd_init())
       return -1;
-
-      my_log("OK osd");
 
    if (gui_init())
       return -1;
 
-      my_log("OK gui");
-
    osd_getvideoinfo(&video);
    if (vid_init(video.default_width, video.default_height, video.driver))
       return -1;
-
-   my_log("OK init");
 
    console.nextfilename = NOFRENDO_STRDUP(filename);
    console.nexttype = type;
