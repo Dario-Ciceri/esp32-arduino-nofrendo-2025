@@ -6,10 +6,10 @@ extern "C" {
 #include <LovyanGFX.hpp>
 
 // Definizione macro per i pin
-#define I2C_PORT_NUM    I2C_NUM_0
-#define I2C_PIN_SDA     38
-#define I2C_PIN_SCL     39
-#define I2C_PIN_INT     40
+// #define I2C_PORT_NUM    I2C_NUM_0
+// #define I2C_PIN_SDA     38
+// #define I2C_PIN_SCL     39
+// #define I2C_PIN_INT     40
 
 #define PIN_WR          35
 #define PIN_RD          48
@@ -119,8 +119,8 @@ extern void display_begin() {
   gfx.endWrite();
 
   // Attiva retroilluminazione
-  //ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
-  ledcAttach(PIN_BL, 12000, 8);     // assegna il pin BL al canale 1
+  ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
+  ledcAttachPin(PIN_BL, 1);     // assegna il pin BL al canale 1
   ledcWrite(1, TFT_BRIGHTNESS); // luminosità 0 - 255
 }
 

@@ -25,6 +25,12 @@ void setup()
 {
     Serial.begin(115200);
 
+    if (psramInit()) {
+        Serial.println("PSRAM initialized successfully");
+    } else {
+        Serial.println("PSRAM initialization failed");
+    }
+
     // turn off WiFi
     esp_wifi_deinit();
 

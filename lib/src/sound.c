@@ -6,7 +6,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 
-#include <driver/i2s.h>
+//#include <driver/i2s.h>
 #include <soc/ledc_struct.h>
 #include <esp32-hal-timer.h>
 
