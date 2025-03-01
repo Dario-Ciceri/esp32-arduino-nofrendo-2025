@@ -1,0 +1,202 @@
+extern "C"
+{
+  #include <nes/nes.h>
+}
+
+#define LGFX_USE_V1
+
+#include <LovyanGFX.hpp>
+#include <driver/i2c.h>
+
+class LGFX : public lgfx::LGFX_Device
+{
+  static constexpr int I2C_PORT_NUM = I2C_NUM_0;
+  static constexpr int I2C_PIN_SDA  = 38;
+  static constexpr int I2C_PIN_SCL  = 39;
+  static constexpr int I2C_PIN_INT  = 40;
+
+  lgfx::Bus_Parallel16 _bus_instance;
+  lgfx::Panel_ILI9488  _panel_instance;
+  lgfx::Light_PWM      _light_instance;
+  //lgfx::ITouch*  _touch_instance_ptr = nullptr;
+
+  bool init_impl(bool use_reset, bool use_clear) override
+  {
+    // (Codice per il touch, se necessario, rimane commentato)
+    return lgfx::LGFX_Device::init_impl(use_reset, use_clear);
+  }
+
+public:
+  LGFX(void)
+  {
+    {
+      auto cfg = _bus_instance.config();
+      cfg.freq_write = 40000000;
+      cfg.pin_wr = 35;
+      cfg.pin_rd = 48;
+      cfg.pin_rs = 36;
+      cfg.pin_d0  = 47;
+      cfg.pin_d1  = 21;
+      cfg.pin_d2  = 14;
+      cfg.pin_d3  = 13;
+      cfg.pin_d4  = 12;
+      cfg.pin_d5  = 11;
+      cfg.pin_d6  = 10;
+      cfg.pin_d7  = 9;
+      cfg.pin_d8  = 3;
+      cfg.pin_d9  = 8;
+      cfg.pin_d10 = 16;
+      cfg.pin_d11 = 15;
+      cfg.pin_d12 = 7;
+      cfg.pin_d13 = 6;
+      cfg.pin_d14 = 5;
+      cfg.pin_d15 = 4;
+      _bus_instance.config(cfg);
+      _panel_instance.bus(&_bus_instance);
+    }
+
+    {
+      auto cfg = _panel_instance.config();
+      cfg.pin_cs          = 37;
+      cfg.pin_rst         = -1;
+      cfg.pin_busy        = -1;
+      cfg.offset_rotation = 1;
+      cfg.readable        = true;
+      cfg.invert          = false;
+      cfg.rgb_order       = false;  // Manteniamo la stessa configurazione del codice originale
+      cfg.dlen_16bit      = true;
+      cfg.bus_shared      = false;
+      _panel_instance.config(cfg);
+    }
+
+    {
+      auto cfg = _light_instance.config();
+      cfg.pin_bl = 45;
+      cfg.invert = false;
+      cfg.freq   = 44100;
+      cfg.pwm_channel = 7;
+      _light_instance.config(cfg);
+      _panel_instance.light(&_light_instance);
+    }
+    setPanel(&_panel_instance);
+  }
+};
+
+// Crea l'istanza del display
+LGFX gfx;
+
+#define TFT_BL         45
+#define TFT_BRIGHTNESS 255  // 0 - 255
+
+// Variabili per il mapping dell'immagine
+static int16_t w, h, frame_x, frame_y, frame_x_offset, frame_width, frame_height, frame_line_pixels;
+extern int16_t bg_color;
+extern uint16_t myPalette[];  // myPalette contiene i colori in formato RGB565 come usati da pushColor
+
+extern void display_begin()
+{
+    gfx.init();
+    bg_color = gfx.color565(24, 28, 24); // DARK DARK GREY
+
+    gfx.startWrite();
+    gfx.fillScreen(bg_color);
+    gfx.endWrite();
+
+    ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
+    ledcAttachPin(TFT_BL, 1);
+    ledcWrite(1, TFT_BRIGHTNESS);
+}
+
+extern "C" void display_init()
+{
+    w = gfx.width();
+    h = gfx.height();
+    if (w < 480)  // Display piccoli (es. 240x240 o 320x240)
+    {
+        if (w > NES_SCREEN_WIDTH)
+        {
+            frame_x = (w - NES_SCREEN_WIDTH) / 2;
+            frame_x_offset = 0;
+            frame_width = NES_SCREEN_WIDTH;
+            frame_height = NES_SCREEN_HEIGHT;
+            frame_line_pixels = frame_width;
+        }
+        else
+        {
+            frame_x = 0;
+            frame_x_offset = (NES_SCREEN_WIDTH - w) / 2;
+            frame_width = w;
+            frame_height = NES_SCREEN_HEIGHT;
+            frame_line_pixels = frame_width;
+        }
+        frame_y = (gfx.height() - NES_SCREEN_HEIGHT) / 2;
+    }
+    else  // Display maggiori (es. 480x320 o simili)
+    {
+        frame_x = 0;
+        frame_y = 0;
+        frame_x_offset = 8;
+        frame_width = w;
+        frame_height = h;
+        frame_line_pixels = frame_width / 2;
+    }
+}
+
+// Funzione helper per lo swap dei byte di un valore 16-bit
+static inline uint16_t swap16(uint16_t x)
+{
+  return (x >> 8) | (x << 8);
+}
+
+extern "C" void display_write_frame(const uint8_t *data[])
+{
+    // Buffer per una riga (massimo 480 pixel)
+    static uint16_t lineBuffer[480];
+
+    gfx.startWrite();
+    if (w < 480)
+    {
+        // Per ogni riga della schermata NES
+        for (int32_t i = 0; i < NES_SCREEN_HEIGHT; i++)
+        {
+            for (int32_t j = 0; j < frame_line_pixels; j++)
+            {
+                uint8_t pixel = data[i][j + frame_x_offset];
+                // Applichiamo lo swap dei byte: pushColor potrebbe applicare questa conversione internamente
+                uint16_t col = myPalette[pixel];
+                lineBuffer[j] = swap16(col);
+            }
+            gfx.pushImage(frame_x, frame_y + i, frame_width, 1, lineBuffer);
+        }
+    }
+    else
+    {
+        int16_t y = 0;
+        for (int16_t i = 10; i < (10 + 214); i++)
+        {
+            const uint8_t *src = data[i] + 8;
+            for (int16_t j = 0; j < frame_line_pixels; j++)
+            {
+                uint8_t pixel = src[j];
+                uint16_t col = myPalette[pixel];
+                // Raddoppia orizzontalmente con swap per ciascun pixel
+                lineBuffer[2 * j]     = swap16(col);
+                lineBuffer[2 * j + 1] = swap16(col);
+            }
+            gfx.pushImage(frame_x, y, frame_width, 1, lineBuffer);
+            y++;
+            if ((i % 2) == 1)
+            {
+                y++; // Scaling verticale: saltiamo una riga
+            }
+        }
+    }
+    gfx.endWrite();
+}
+
+extern "C" void display_clear()
+{
+    gfx.startWrite();
+    gfx.fillRect(0, 0, gfx.width(), gfx.height(), bg_color);
+    gfx.endWrite();
+}

@@ -1,0 +1,330 @@
+extern "C" {
+    #include <nes/nes.h>
+  }
+  
+  #define LGFX_USE_V1
+  #include <LovyanGFX.hpp>
+  
+  // Pin definitions
+  #define I2C_PORT_NUM    I2C_NUM_0
+  #define I2C_PIN_SDA     38
+  #define I2C_PIN_SCL     39
+  #define I2C_PIN_INT     40
+  
+  #define PIN_WR          35
+  #define PIN_RD          48
+  #define PIN_RS          36
+  #define PIN_CS          37
+  #define PIN_RST         -1
+  #define PIN_BUSY        -1
+  #define PIN_BL          45
+  
+  // Configuration macros
+  #define PWM_CHANNEL     7
+  #define FREQ_WRITE      40000000
+  #define FREQ_PWM        44100
+  #define TFT_BRIGHTNESS  255  // Value between 0 and 255
+  
+  // NES screen dimensions
+  #define NES_SCREEN_WIDTH  256
+  #define NES_SCREEN_HEIGHT 240
+  
+  // Display dimensions
+  #define DISPLAY_WIDTH   480
+  #define DISPLAY_HEIGHT  320
+  
+  // Double buffering - ESP32-S3 has plenty of PSRAM
+  #define USE_DOUBLE_BUFFER 1
+  #define USE_DMA_TRANSFERS 1
+  
+  void displayTask(void* parameter);
+  
+  class LGFX : public lgfx::LGFX_Device {
+    lgfx::Bus_Parallel16 _bus_instance;
+    lgfx::Panel_ILI9488 _panel_instance;
+    lgfx::Light_PWM _light_instance;
+  
+    bool init_impl(bool use_reset, bool use_clear) override {
+      return lgfx::LGFX_Device::init_impl(use_reset, use_clear);
+    }
+  
+  public:
+    LGFX(void) {
+      {
+        auto cfg = _bus_instance.config();
+        cfg.freq_write = FREQ_WRITE;
+        cfg.pin_wr = PIN_WR;
+        cfg.pin_rd = PIN_RD;
+        cfg.pin_rs = PIN_RS;
+  
+        cfg.pin_d0 = 47;
+        cfg.pin_d1 = 21;
+        cfg.pin_d2 = 14;
+        cfg.pin_d3 = 13;
+        cfg.pin_d4 = 12;
+        cfg.pin_d5 = 11;
+        cfg.pin_d6 = 10;
+        cfg.pin_d7 = 9;
+        cfg.pin_d8 = 3;
+        cfg.pin_d9 = 8;
+        cfg.pin_d10 = 16;
+        cfg.pin_d11 = 15;
+        cfg.pin_d12 = 7;
+        cfg.pin_d13 = 6;
+        cfg.pin_d14 = 5;
+        cfg.pin_d15 = 4;
+        _bus_instance.config(cfg);
+        _panel_instance.bus(&_bus_instance);
+      }
+  
+      {
+        auto cfg = _panel_instance.config();
+        cfg.pin_cs = PIN_CS;
+        cfg.pin_rst = PIN_RST;
+        cfg.pin_busy = PIN_BUSY;
+        cfg.offset_rotation = 1;
+        cfg.readable = true;
+        cfg.invert = false;
+        cfg.rgb_order = false;
+        cfg.dlen_16bit = true;
+        cfg.bus_shared = false;
+        
+        #if USE_DMA_TRANSFERS
+        // Enable DMA if supported (ESP32-S3 supports it)
+        //cfg.dma_channel = 1;
+        //cfg.psram_enable = true;
+        #endif
+        
+        _panel_instance.config(cfg);
+      }
+  
+      {
+        auto cfg = _light_instance.config();
+        cfg.pin_bl = PIN_BL;
+        cfg.invert = false;
+        cfg.freq = FREQ_PWM;
+        cfg.pwm_channel = PWM_CHANNEL;
+        _light_instance.config(cfg);
+        _panel_instance.light(&_light_instance);
+      }
+      setPanel(&_panel_instance);
+    }
+  };
+  
+  // Create display instance
+  LGFX gfx;
+  
+  // Scaling mapping arrays
+  static uint16_t scale_x[DISPLAY_WIDTH];
+  static uint8_t scale_y[DISPLAY_HEIGHT];
+  
+  extern int16_t bg_color;
+  extern uint16_t myPalette[];
+  
+  // Helper function to swap bytes
+  #define SWAP16(x) ((x >> 8) | (x << 8))
+  
+  #if USE_DOUBLE_BUFFER
+  // Allocate frame buffers in PSRAM
+  static uint16_t* front_buffer = nullptr;
+  static uint16_t* back_buffer = nullptr;
+  static bool buffer_ready = false;
+  static SemaphoreHandle_t framebuffer_mutex = nullptr;
+  static TaskHandle_t display_task_handle = nullptr;
+  #endif
+  
+  extern void display_begin() {
+    gfx.init();
+    bg_color = gfx.color565(0, 0, 0); // BLACK
+    gfx.startWrite();
+    gfx.fillScreen(bg_color);
+    gfx.endWrite();
+  
+    // Activate backlight
+    ledcSetup(1, 12000, 8);       // 12 kHz, 8-bit
+    ledcAttachPin(PIN_BL, 1);     // assign BL pin to channel 1
+    ledcWrite(1, TFT_BRIGHTNESS); // brightness 0 - 255
+  
+    #if USE_DOUBLE_BUFFER
+    // Allocate double buffers in PSRAM
+    front_buffer = (uint16_t*)heap_caps_malloc(DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    back_buffer = (uint16_t*)heap_caps_malloc(DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    
+    if (!front_buffer || !back_buffer) {
+      Serial.println("Failed to allocate frame buffers! Falling back to direct rendering.");
+    } else {
+      // Initialize buffers
+      memset(front_buffer, 0, DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t));
+      memset(back_buffer, 0, DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t));
+      
+      // Create mutex for buffer access
+      framebuffer_mutex = xSemaphoreCreateMutex();
+      
+      // Create display task for asynchronous updates
+      xTaskCreatePinnedToCore(
+        displayTask,     // Task function
+        "displayTask",   // Name
+        8192,            // Stack size
+        NULL,            // Parameters
+        1,               // Priority
+        &display_task_handle, // Task handle
+        0                // Core (APP_CPU)
+      );
+      
+      buffer_ready = true;
+    }
+    #endif
+  }
+  
+  #if USE_DOUBLE_BUFFER
+  // Display task for handling frame buffer swaps
+  void displayTask(void* parameter) {
+    while (1) {
+      if (buffer_ready && xSemaphoreTake(framebuffer_mutex, portMAX_DELAY)) {
+        // Check if we have a new frame to display
+        if (front_buffer) {
+          gfx.startWrite();
+          // Push the entire frame at once to reduce tearing
+          gfx.pushImage(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, front_buffer);
+          gfx.endWrite();
+        }
+        xSemaphoreGive(framebuffer_mutex);
+      }
+      
+      // 60Hz refresh rate (approximately)
+      vTaskDelay(pdMS_TO_TICKS(16)); // ~60fps
+    }
+  }
+  
+  // Swap buffers
+  void swap_buffers() {
+    if (buffer_ready && xSemaphoreTake(framebuffer_mutex, portMAX_DELAY)) {
+      uint16_t* temp = front_buffer;
+      front_buffer = back_buffer;
+      back_buffer = temp;
+      xSemaphoreGive(framebuffer_mutex);
+    }
+  }
+  #endif
+  
+  extern "C" void display_init() {
+    // Initialize scaling lookup tables
+    for (int x = 0; x < DISPLAY_WIDTH; x++) {
+      scale_x[x] = (x * NES_SCREEN_WIDTH) / DISPLAY_WIDTH;
+    }
+    for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+      scale_y[y] = (y * NES_SCREEN_HEIGHT) / DISPLAY_HEIGHT;
+    }
+  }
+  
+  extern "C" void display_write_frame(const uint8_t *data[]) {
+    #if USE_DOUBLE_BUFFER
+    if (buffer_ready) {
+      // Render to back buffer
+      for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+        const uint8_t* src = data[scale_y[y]];
+        uint16_t* dst = &back_buffer[y * DISPLAY_WIDTH];
+        
+        for (int x = 0; x < DISPLAY_WIDTH; x++) {
+          uint8_t pixel = src[scale_x[x]];
+          dst[x] = SWAP16(myPalette[pixel]);
+        }
+      }
+      
+      // Special handling for right edge artifacts: explicitly clear the rightmost 12 pixels
+      for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+        for (int x = DISPLAY_WIDTH - 12; x < DISPLAY_WIDTH; x++) {
+          back_buffer[y * DISPLAY_WIDTH + x] = 0; // Black
+        }
+      }
+      
+      // Swap buffers to display the new frame
+      swap_buffers();
+    } else {
+      // Fallback to direct rendering if double buffering failed
+      static uint16_t buffer[DISPLAY_WIDTH];
+      
+      gfx.startWrite();
+      for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+        const uint8_t* src = data[scale_y[y]];
+        
+        for (int x = 0; x < DISPLAY_WIDTH - 12; x++) {
+          uint8_t pixel = src[scale_x[x]];
+          buffer[x] = SWAP16(myPalette[pixel]);
+        }
+        
+        // Clear the rightmost 12 pixels
+        for (int x = DISPLAY_WIDTH - 12; x < DISPLAY_WIDTH; x++) {
+          buffer[x] = 0; // Black
+        }
+        
+        gfx.pushImage(0, y, DISPLAY_WIDTH, 1, buffer);
+      }
+      gfx.endWrite();
+    }
+    #else
+    // Original non-buffered approach but with right edge cleared
+    static uint16_t buffer[DISPLAY_WIDTH];
+    
+    gfx.startWrite();
+    for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+      const uint8_t* src = data[scale_y[y]];
+      
+      for (int x = 0; x < DISPLAY_WIDTH - 12; x++) {
+        uint8_t pixel = src[scale_x[x]];
+        buffer[x] = SWAP16(myPalette[pixel]);
+      }
+      
+      // Clear the rightmost 12 pixels
+      for (int x = DISPLAY_WIDTH - 12; x < DISPLAY_WIDTH; x++) {
+        buffer[x] = 0; // Black
+      }
+      
+      gfx.pushImage(0, y, DISPLAY_WIDTH, 1, buffer);
+    }
+    gfx.endWrite();
+    #endif
+  }
+  
+  extern "C" void display_clear() {
+    #if USE_DOUBLE_BUFFER
+    if (buffer_ready) {
+      if (xSemaphoreTake(framebuffer_mutex, portMAX_DELAY)) {
+        memset(back_buffer, 0, DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t));
+        xSemaphoreGive(framebuffer_mutex);
+      }
+      
+      swap_buffers();
+    } else {
+      gfx.startWrite();
+      gfx.fillScreen(bg_color);
+      gfx.endWrite();
+    }
+    #else
+    gfx.startWrite();
+    gfx.fillScreen(bg_color);
+    gfx.endWrite();
+    #endif
+  }
+  
+  // Handle application shutdown properly
+  extern "C" void display_cleanup() {
+    #if USE_DOUBLE_BUFFER
+    // Delete task and free memory
+    if (display_task_handle) {
+      vTaskDelete(display_task_handle);
+    }
+    
+    if (framebuffer_mutex) {
+      vSemaphoreDelete(framebuffer_mutex);
+    }
+    
+    if (front_buffer) {
+      heap_caps_free(front_buffer);
+    }
+    
+    if (back_buffer) {
+      heap_caps_free(back_buffer);
+    }
+    #endif
+  }

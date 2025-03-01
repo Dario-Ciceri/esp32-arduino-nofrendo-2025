@@ -1,0 +1,181 @@
+extern "C"
+{
+#include <nes/nes.h>
+}
+
+#define LGFX_USE_V1
+
+#include <LovyanGFX.hpp>
+// #include <driver/i2c.h>
+
+class LGFX : public lgfx::LGFX_Device
+{
+//   static constexpr int I2C_PORT_NUM = I2C_NUM_0;
+//   static constexpr int I2C_PIN_SDA = 38;
+//   static constexpr int I2C_PIN_SCL = 39;
+//   static constexpr int I2C_PIN_INT = 40;
+
+  lgfx::Bus_Parallel16 _bus_instance;
+  lgfx::Panel_ILI9488 _panel_instance;
+  lgfx::Light_PWM     _light_instance;
+  //lgfx::ITouch*  _touch_instance_ptr = nullptr;
+
+  /// Detects and configures the touch panel during initialization;
+  bool init_impl(bool use_reset, bool use_clear) override
+  {
+    // if (_touch_instance_ptr == nullptr)
+    // {
+    //   lgfx::ITouch::config_t cfg;
+    //   lgfx::i2c::init(I2C_PORT_NUM, I2C_PIN_SDA, I2C_PIN_SCL);
+    //   if (lgfx::i2c::beginTransaction(I2C_PORT_NUM, 0x38, 400000, false).has_value()
+    //    && lgfx::i2c::endTransaction(I2C_PORT_NUM).has_value())
+    //   {
+    //     _touch_instance_ptr = new lgfx::Touch_FT5x06();
+    //     cfg = _touch_instance_ptr->config();
+    //     cfg.i2c_addr = 0x38;
+    //     cfg.x_max = 320;
+    //     cfg.y_max = 480;
+    //   }
+    //   else
+    //   if (lgfx::i2c::beginTransaction(I2C_PORT_NUM, 0x48, 400000, false).has_value()
+    //    && lgfx::i2c::endTransaction(I2C_PORT_NUM).has_value())
+    //   {
+    //     _touch_instance_ptr = new lgfx::Touch_NS2009();
+    //     cfg = _touch_instance_ptr->config();
+    //     cfg.i2c_addr = 0x48;
+    //     cfg.x_min = 368;
+    //     cfg.y_min = 212;
+    //     cfg.x_max = 3800;
+    //     cfg.y_max = 3800;
+    //   }
+    //   if (_touch_instance_ptr != nullptr)
+    //   {
+    //     cfg.i2c_port = I2C_PORT_NUM;
+    //     cfg.pin_sda  = I2C_PIN_SDA;
+    //     cfg.pin_scl  = I2C_PIN_SCL;
+    //     cfg.pin_int  = I2C_PIN_INT;
+    //     cfg.freq = 400000;
+    //     cfg.bus_shared = false;
+    //     _touch_instance_ptr->config(cfg);
+    //     _panel_instance.touch(_touch_instance_ptr);
+    //   }
+    // }
+    return lgfx::LGFX_Device::init_impl(use_reset, use_clear);
+  }
+
+public:
+
+  LGFX(void)
+  {
+    {
+      auto cfg = _bus_instance.config();
+
+      cfg.freq_write = 40000000;
+      cfg.pin_wr = 35;
+      cfg.pin_rd = 48;
+      cfg.pin_rs = 36;
+
+      cfg.pin_d0 = 47;
+      cfg.pin_d1 = 21;
+      cfg.pin_d2 = 14;
+      cfg.pin_d3 = 13;
+      cfg.pin_d4 = 12;
+      cfg.pin_d5 = 11;
+      cfg.pin_d6 = 10;
+      cfg.pin_d7 = 9;
+      cfg.pin_d8 = 3;
+      cfg.pin_d9 = 8;
+      cfg.pin_d10 = 16;
+      cfg.pin_d11 = 15;
+      cfg.pin_d12 = 7;
+      cfg.pin_d13 = 6;
+      cfg.pin_d14 = 5;
+      cfg.pin_d15 = 4;
+      _bus_instance.config(cfg);
+      _panel_instance.bus(&_bus_instance);
+    }
+
+    {
+      auto cfg = _panel_instance.config();
+      cfg.pin_cs          =    37;
+      cfg.pin_rst         =    -1;
+      cfg.pin_busy        =    -1;
+      cfg.offset_rotation =     1;
+      cfg.readable        =  true;
+      cfg.invert          = false;
+      cfg.rgb_order       = false;
+      cfg.dlen_16bit      =  true;
+      cfg.bus_shared      = false;
+
+      _panel_instance.config(cfg);
+    }
+
+    {
+      auto cfg = _light_instance.config();
+
+      cfg.pin_bl = 45;
+      cfg.invert = false;
+      cfg.freq   = 44100;
+      cfg.pwm_channel = 7;
+
+      _light_instance.config(cfg);
+      _panel_instance.light(&_light_instance);
+    }
+    setPanel(&_panel_instance);
+  }
+};
+
+// Create display instance
+LGFX gfx;
+
+// Backlight control definition
+#define TFT_BL 45
+#define TFT_BRIGHTNESS 255 /* 0 - 255 */
+
+// NES display dimensions
+static int16_t w, h, frame_x, frame_y, frame_x_offset, frame_width, frame_height, frame_line_pixels;
+extern int16_t bg_color;
+extern uint16_t myPalette[];
+
+static uint16_t scale_x[480];
+static uint8_t scale_y[320];
+
+extern void display_begin()
+{
+    gfx.init();
+    bg_color = gfx.color565(24, 28, 24); // DARK DARK GREY
+    gfx.fillScreen(bg_color);
+
+    // Turn display backlight on
+    ledcSetup(1, 12000, 8);       // 12 kHz PWM, 8-bit resolution
+    ledcAttachPin(TFT_BL, 1);     // assign TFT_BL pin to channel 1
+    ledcWrite(1, TFT_BRIGHTNESS); // brightness 0 - 255
+}
+
+extern "C" void display_init()
+{
+    for(int x=0; x<480; x++) scale_x[x] = (x * 256) / 480;
+    for(int y=0; y<320; y++) scale_y[y] = (y * 240) / 320;
+}
+
+
+extern "C" void display_write_frame(const uint8_t *data[]) {
+    static uint16_t buffer[480];
+    
+    gfx.startWrite();
+    for(int y=0; y<320; y++) {
+        const uint8_t* src = data[scale_y[y]];
+        
+        // Scaling orizzontale 256->480
+        for(int x=0; x<480; x++) {
+            buffer[x] = myPalette[src[scale_x[x]]];
+        }
+        
+        gfx.pushImage(0, y, 480, 1, buffer);
+    }
+    gfx.endWrite();
+}
+
+extern "C" void display_clear() {
+    gfx.fillScreen(bg_color);
+}
