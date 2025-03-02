@@ -25,13 +25,16 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "noftypes.h"
 #include "bitmap.h"
 
 void bmp_clear(const bitmap_t *bitmap, uint8 color)
 {
-   memset(bitmap->data, color, bitmap->pitch * bitmap->height);
+   if (bitmap && bitmap->data) {
+      memset(bitmap->data, color, bitmap->pitch * bitmap->height);
+   }
 }
 
 static bitmap_t *_make_bitmap(uint8 *data_addr, bool hw, int width,
@@ -56,13 +59,15 @@ static bitmap_t *_make_bitmap(uint8 *data_addr, bool hw, int width,
    bitmap->pitch = pitch + (overdraw * 2);
 
    /* Set up line pointers */
-   /* we want to make some 32-bit aligned adjustment
+   /* we want to make some aligned adjustment
    ** if we haven't been given a hardware bitmap
    */
    if (false == bitmap->hardware)
    {
+      /* Ensure 4-byte alignment for pitch */
       bitmap->pitch = (bitmap->pitch + 3) & ~3;
-      bitmap->line[0] = (uint8 *)(((uint32)bitmap->data + overdraw + 3) & ~3);
+      /* Ensure data pointer is also 4-byte aligned with overdraw consideration */
+      bitmap->line[0] = (uint8 *)(((uintptr_t)bitmap->data + overdraw + 3) & ~3);
    }
    else
    {
@@ -80,10 +85,26 @@ bitmap_t *bmp_create(int width, int height, int overdraw)
 {
    uint8 *addr;
    int pitch;
+   size_t alloc_size;
+
+   /* Validate input parameters */
+   if (width <= 0 || height <= 0 || overdraw < 0) {
+      return NULL;
+   }
 
    pitch = width + (overdraw * 2); /* left and right */
+   
+   /* Calculate allocation size with proper alignment and overflow protection */
+   /* Ensure we don't overflow when calculating the total size */
+   if (pitch > 0 && height > (SIZE_MAX - 7) / pitch) {
+      /* Overflow would occur */
+      return NULL;
+   }
 
-   addr = NOFRENDO_MALLOC(((pitch * height) + 3) & 0xFFFFFFF8); /* add max 32-bit aligned adjustment */
+   /* Calculate size with 8-byte alignment and extra space for alignment adjustment */
+   alloc_size = ((pitch * height) + 7) & ~7; /* 8-byte alignment mask */
+
+   addr = NOFRENDO_MALLOC(alloc_size);
    if (NULL == addr)
       return NULL;
 
@@ -93,13 +114,17 @@ bitmap_t *bmp_create(int width, int height, int overdraw)
 /* allocate and initialize a hardware bitmap */
 bitmap_t *bmp_createhw(uint8 *addr, int width, int height, int pitch)
 {
+   if (addr == NULL || width <= 0 || height <= 0 || pitch <= 0) {
+      return NULL;
+   }
+   
    return _make_bitmap(addr, true, width, height, pitch, 0); /* zero overdraw */
 }
 
 /* Deallocate space for a bitmap structure */
 void bmp_destroy(bitmap_t **bitmap)
 {
-   if (*bitmap)
+   if (bitmap && *bitmap)
    {
       if ((*bitmap)->data && false == (*bitmap)->hardware)
          NOFRENDO_FREE((*bitmap)->data);

@@ -92,18 +92,18 @@
 // #define HW_AUDIO_SAMPLERATE 22050
 
 /* controller is GPIO */
-#define HW_CONTROLLER_GPIO 5
-#define HW_CONTROLLER_GPIO_ANALOG_JOYSTICK 5
+// #define HW_CONTROLLER_GPIO 5
+// #define HW_CONTROLLER_GPIO_ANALOG_JOYSTICK 5
 // #define HW_CONTROLLER_GPIO_REVERSE_UD
-#define HW_CONTROLLER_GPIO_UP_DOWN 5
-#define HW_CONTROLLER_GPIO_REVERSE_LF 5
-#define HW_CONTROLLER_GPIO_LEFT_RIGHT 5
-#define HW_CONTROLLER_GPIO_SELECT 5
-#define HW_CONTROLLER_GPIO_START 5
-#define HW_CONTROLLER_GPIO_A 5
-#define HW_CONTROLLER_GPIO_B 5
-#define HW_CONTROLLER_GPIO_X 5
-#define HW_CONTROLLER_GPIO_Y 5
+// #define HW_CONTROLLER_GPIO_UP_DOWN 5
+// #define HW_CONTROLLER_GPIO_REVERSE_LF 5
+// #define HW_CONTROLLER_GPIO_LEFT_RIGHT 5
+// #define HW_CONTROLLER_GPIO_SELECT 5
+// #define HW_CONTROLLER_GPIO_START 5
+// #define HW_CONTROLLER_GPIO_A 5
+// #define HW_CONTROLLER_GPIO_B 5
+// #define HW_CONTROLLER_GPIO_X 5
+// #define HW_CONTROLLER_GPIO_Y 5
 
 /* controller is I2C M5Stack CardKB */
 // #define HW_CONTROLLER_I2C_M5CARDKB
@@ -111,6 +111,12 @@
 /* controller is I2C BBQ10Keyboard */
 // #define HW_CONTROLLER_I2C_BBQ10KB
 
+
+#define XBOX_CONTROLLER
+/* Uncomment to use analog sticks as D-pad */
+#define XBOX_CONTROLLER_USE_ANALOG_AS_DPAD
+/* Uncomment to use triggers as additional buttons */
+//#define XBOX_CONTROLLER_USE_TRIGGERS
 #endif /* custom hardware */
 
 #endif /* _HW_CONFIG_H_ */
