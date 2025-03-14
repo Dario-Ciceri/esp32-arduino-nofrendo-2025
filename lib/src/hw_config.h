@@ -114,7 +114,7 @@
 
 #define XBOX_CONTROLLER
 /* Uncomment to use analog sticks as D-pad */
-#define XBOX_CONTROLLER_USE_ANALOG_AS_DPAD
+//#define XBOX_CONTROLLER_USE_ANALOG_AS_DPAD
 /* Uncomment to use triggers as additional buttons */
 //#define XBOX_CONTROLLER_USE_TRIGGERS
 #endif /* custom hardware */

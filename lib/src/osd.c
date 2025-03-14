@@ -150,8 +150,8 @@ extern uint32_t controller_read_input();
 
 static void osd_initinput()
 {
+	gui_togglefps();
 	controller_init();
-	
 }
 
 static void osd_freeinput(void)
