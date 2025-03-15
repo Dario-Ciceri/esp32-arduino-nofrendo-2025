@@ -19,7 +19,7 @@ extern "C" {
 
 // Configurazione
 #define PWM_CHANNEL     7
-#define FREQ_WRITE      60000000  // Aumentato per migliori performance
+#define FREQ_WRITE      40000000
 #define FREQ_PWM        44100
 #define TFT_BRIGHTNESS  255
 
@@ -177,10 +177,8 @@ extern "C" void display_write_frame(const uint8_t *data[]) {
     }
     
     // Invia l'intera linea in un'unica operazione (molto più veloce)
-    gfx.pushPixels(line_buffer, DISPLAY_WIDTH);
+    gfx.pushPixelsDMA(line_buffer, DISPLAY_WIDTH);
   }
-  
-  
   
   gfx.endWrite();
 }

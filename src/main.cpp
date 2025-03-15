@@ -1,6 +1,7 @@
 /* Arduino Nofrendo
  * Please check hw_config.h and display.cpp for configuration details
  */
+
 #include <esp_wifi.h>
 #include <esp_task_wdt.h>
 #include <FFat.h>
